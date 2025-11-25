@@ -1,0 +1,1046 @@
+---
+title: "Analysis of Arctic prokaryotes using Scanning electron microscopy (SEM) and -energy dispersive X-ray spectroscopy (SEM-EDX)"
+author:
+  name: "Ashish Verma"
+  email: "ashish.csirihbt@gmail.com"
+date: "2025-11-25"
+format:
+  html:
+    toc: true
+    code-fold: true
+
+execute:
+  echo: true
+  warning: false
+  message: false
+  dir: project   # this was the missing part
+
+editor: visual
+---
+
+# Load packages and libraries
+
+```{r}
+packages <- c("readxl","tidyverse","ggplot2","broom","viridis",
+    "patchwork","cowplot","rstatix","zoo","scales","ggpubr","magick","grid","FSA",
+    "dunn.test")
+
+#Install missing packages
+
+for (pkg in packages) {
+if (!require(pkg, character.only = TRUE)) {
+install.packages(pkg)
+}
+}
+
+# Load packages without printing output
+purrr::walk(packages, library, character.only = TRUE, quietly = TRUE)
+```
+
+# Proportion of cell shapes 
+
+@fig-4a shows the proportion of cell shape distribution between the epipelagic and mesopelagic depth layers.
+
+```{r}
+##Read a specific sheet by name
+sem <- read_excel("./data/rawdata.xlsx", sheet = "cellcounts")
+
+##Count cells
+cells_counts <- sem |>
+  group_by(shape, depth_category) |>
+  summarise(total = sum(n), .groups = "drop")
+print(cells_counts)
+```
+
+```{r}
+##Estimating proportion
+cells_prop <- sem |>
+  group_by(depth_category) |>
+  mutate(prop = n / sum(n))
+print(cells_prop)
+```
+
+```{r}
+##Recode depth category and convert to factor
+cells_prop <- cells_prop %>%
+  mutate(
+    depth_category = case_when(
+      depth_category == "Upper" ~ "Epipelagic\n(n=177)",
+      depth_category == "Lower" ~ "Mesopelagic\n(n=52)",
+      TRUE ~ as.character(depth_category)  # fallback
+    ),
+    depth_category = factor(
+      depth_category,
+      levels = c("Epipelagic\n(n=177)", "Mesopelagic\n(n=52)")
+    )
+  )
+print(cells_prop)
+```
+
+```{r}
+##Set the levels for Shape to the desired order
+cells_prop$shape <- factor(cells_prop$shape,
+                         levels = c("Rods", "Cocci", "Vibrioid", "Spirals", "Spirochetes"))
+
+##Proportion of cells
+cells_shape_prop <- cells_prop %>%
+  group_by(depth_category, shape) %>%
+  summarise(total = sum(n), .groups = "drop") %>%
+  group_by(depth_category) %>%
+  mutate(shapeProp = round((total / sum(total)) * 100, 1))
+print(cells_shape_prop)
+```
+
+```{r}
+##Gradient proportion
+cells_shape_prop <- cells_shape_prop |>
+  mutate(label_color = ifelse(shapeProp > 23, "white", "black"))  # Black and white colors were set to see the % numbers on contasts
+```
+
+```{r}
+#| label: fig-4a
+#| fig-cap: "Proportion of cell shape proprotion between epipelgiac and mesopelagic layers"
+
+##Gradient plot of cell shapes
+Fig4a <- ggplot(cells_shape_prop,
+                aes(x = depth_category, y = shape, fill = shapeProp)) +
+  geom_tile() +
+  geom_text(aes(label = paste0(round(shapeProp, 1), "%"), color = label_color), size = 2) + # Add percentages
+  scale_color_identity() +  # This tells ggplot: "label_color already is the final color"
+  scale_fill_viridis_c(option = "cividis",
+                       direction = -1,
+                       name = "Proportion (%)") +
+  labs(fill = "Proportion (%)", x = "Depth", y = "Cell shape") +
+  theme_minimal() +
+  theme(
+    text = element_text(family = "sans"),
+    axis.title.x = element_text(colour = "Black", size = 7),
+    axis.title.y = element_text(colour = "Black", size = 7),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 7, face = "bold"),
+    panel.grid = element_blank(),
+    panel.border = element_rect(
+      color = "black",
+      linewidth = 1.5,
+      fill = NA
+    ),
+    axis.text = element_text(size = 7, face = "bold"),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+      vjust = 1,
+      margin = margin(t = 0)
+    ),
+    plot.title = element_text(hjust = 0.03),
+    strip.text = element_text(size = 7, face = "bold"),
+    panel.spacing = unit(0.2, "lines")
+  )
+Fig4a
+
+##save in figures folder
+ggsave(
+  filename = "Fig4a.png",
+  plot = Fig4a,
+  path = "figures",
+  width = 28,
+  height = 22,
+  units = "cm",
+  dpi = 400
+)
+```
+
+# SEM image showing morphological features
+
+@fig-4b shows the different morphological features of Arctic prokaryotes seen in scanning electron microscopy
+
+```{r}
+#| label: fig-4b
+#| fig-cap: "Scanning electron micrographs shows the different morphological features of Arctic prokaryotes"
+
+##upload the SEM image
+SEM <- image_read("./figures/Fig4b.png")
+
+##Convert to grob for ggplot
+g_img <- rasterGrob(SEM, interpolate = TRUE)
+
+##Wrap in a ggplot panel
+Fig4b <- ggplot() +
+  annotation_custom(g_img) +
+  theme_minimal()
+
+##Show the figure
+Fig4b
+```
+
+# Statistical tests: specific to cell shape between depths
+
+Cell counts for each shape were grouped into epipelagic (upper) and mesopelagic (lower) layers, and the proportion of each cell shape was calculated within each depth category.
+
+```{r}
+##To test if there is significant difference between overall cell shape proportion between depths
+##Check normality of data in cell shape proprotion
+
+##Is Proportion different between Epipelagic and Mesopelagic overall, pooling all shapes together?
+
+##Read a specific sheet by name
+shape_depth <- read_excel("./data/rawdata.xlsx", sheet = "seabasin_depth_proportion")
+
+##Shapiro Wilk test based on depth
+##1.Null hypothesis(H0): data follows normal distribution
+##2.Alternate hypothesis(H1): data does not follow normal distribution
+normality_depth <- shape_depth |>
+  group_by(depth) |>
+  summarise(n = n(),
+            shapiro_p = if (n() >= 3)
+              shapiro.test(proportion)$p.value
+            else
+              NA) |>
+  ungroup()
+print(normality_depth)
+```
+
+```{r}
+##p-value < 0.05, Reject Null hypothesis: Data is not normally distributed
+#Apply non parametric test
+
+# Overall Mann–Whitney test
+wilcox_depth <- wilcox.test(proportion ~ depth,
+                        data = shape_depth,
+                        exact = FALSE,
+                        correct = FALSE)
+print(wilcox_depth)
+```
+
+```{r}
+##There is significant difference in overall cell shape proportions
+##check if there is any siginficant difference in a specific shape between two depths
+
+##Check Shapiro–Wilk tests for normality
+normality_shape_depth <- shape_depth |>
+  group_by(shape, depth) |>
+  summarise(
+    n      = n(),
+    shapiro_p = if (n >= 3) {
+      shapiro.test(proportion)$p.value
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  )
+
+print(normality_shape_depth)
+```
+
+```{r}
+##Based on normality test, the data is non-normal (p<0.05), so test with non parametric test
+
+##Wilcoxon per shape: Epipelagic vs Mesopelagic
+wilcox_shape_depth <- shape_depth |>
+  group_by(shape) |>
+  summarise(
+    n_ep = sum(depth == "Epipelagic"),
+    n_ms = sum(depth == "Mesopelagic"),
+
+    p_value = if (n_ep >= 3 && n_ms >= 3) {
+      wilcox.test(
+        proportion ~ depth,
+        data = cur_data_all(),
+        exact   = FALSE,
+        correct = FALSE
+      )$p.value
+    } else {
+      NA_real_
+    },
+    .groups = "drop"
+  ) |>
+  mutate(p_adj = p.adjust(p_value, method = "bonferroni"))
+
+print(wilcox_shape_depth)
+##p-adjusted values shows that there is no siginficant difference between rods, spherical and vibrioid between epipelagic and mesopelagic
+```
+
+# Statistical tests: specific to cell shape between seabasins
+
+```{r}
+##For seabasin-Normality test
+normality_test_seabasin <- shape_depth |>
+  group_by(seabasin, depth) |>
+  summarise(n = n(),
+            shapiro_p = if (n() >= 3)
+              shapiro.test(proportion)$p.value
+            else
+              NA) |>
+  ungroup()
+print(normality_test_seabasin)
+```
+
+```{r}
+##In most of the cases, p < 0.05, so non-normal
+##So, KW test done-for comparing two or more independent samples-3 seabasins here
+##OverallKruskall wallis test (ignoring Shape)
+kw_seabasin <- kruskal.test(proportion ~ seabasin, data = shape_depth)
+print(kw_seabasin)
+
+##No significant difference found
+```
+
+# Chi-square test: Finding association of morphological features between epipelagic and mesopelagic layers
+
+```{r}
+##Chi square test on morphological features
+
+##Read a specific sheet by name
+morph_features <- read_excel("./data/rawdata.xlsx", sheet = "features")
+glimpse(morph_features)
+```
+
+```{r}
+##Convert columns to factors
+morph_features$seabasin <- as.factor(morph_features$seabasin)
+morph_features$depth <- as.factor(morph_features$depth)
+morph_features$features <- as.factor(morph_features$features)
+morph_features$criteria <- as.factor(morph_features$criteria)
+```
+
+```{r}
+##Chi-square test function for depth and features
+perform_chisq_test <- function(df, feature_name) {
+  ##Filter data for the specific feature
+  feature_df <- morph_features %>% filter(features == feature_name)
+  ##Create a 2x2 contingency table using depth and criteria
+  tbl <- xtabs(counts ~ depth + criteria, data = feature_df)
+  cat("Contingency Table for Feature:", feature_name, ":\n")
+  print(tbl)
+  
+  ##Check if the table is 2x2
+  if (nrow(tbl) == 2 && ncol(tbl) == 2) {
+    ##Perform chi-square test without correction
+    chisq_result <- suppressWarnings(chisq.test(tbl, correct = FALSE))
+    cat("\nExpected Frequencies for Feature:", feature_name, ":\n")
+    print(chisq_result$expected)
+    
+    ##Decision logic for test selection
+    if (any(chisq_result$expected <= 5)) {
+      ##Fisher's Exact Test: Used when any expected frequency is <= 5
+      ##Provides exact p-values and is preferred for small expected frequencies
+      cat("\nExpected frequency <= 5, using Fisher's Exact Test...\n")
+      fisher_result <- fisher.test(tbl)
+      print(fisher_result)
+    } else {
+      ##Chi-Square Test without correction: Applied when all expected frequencies > 5
+      ##Reliable and straightforward when expected counts are sufficient
+      cat("\nExpected frequency > 5, using standard Chi-Square Test...\n")
+      chisq_result <- suppressWarnings(chisq.test(tbl, correct = FALSE))
+      print(chisq_result)
+    }
+  } else {
+    cat("\nInvalid 2x2 table for feature:", feature_name, "\n")
+  }
+}
+```
+
+# Chi-square test results
+
+All ten morphological features observed in Arctic prokaryotes were evaluated using chi-square tests to examine their association with epipelagic and mesopelagic depth layers. For this analysis, data from both depth layers were combined and compared.
+
+```{r}
+##Unique features list
+distinct_features <- unique(morph_features$features)
+
+##Print overall results first
+cat("\n=================== Overall Chi-Square Tests ===================\n")
+for (features in distinct_features) {
+  cat("\n=== Feature:", features, "===\n")
+  perform_chisq_test(morph_features, features)
+}
+```
+
+# Chi-square test results: seabasin-specific analysis
+
+This analysis evaluates whether morphological features are significantly associated with individual seabasins (Amundsen, Makarov and Nansen) using seabasin-specific chi-square tests. The results will appear as ten chi-square analysis under each seabasin.
+
+```{r}
+##Print seabasin-specific results
+cat("\n=================== Site-Specific Chi-Square Tests ===================\n")
+for (sb in unique(morph_features$seabasin)) {
+  seabsin_data <- morph_features %>% filter(seabasin == sb)
+  cat("\nseabasin:", sb, "\n")
+  for (feat in distinct_features) {
+    cat("\nFeature:", feat, "\n")
+    perform_chisq_test(seabasin_data, feat)
+  }
+}
+```
+
+# Chi-square table
+
+@fig-4c shows results from the chi-square test analysis.
+
+```{r}
+#| label: fig-4c
+#| fig-cap: "Chi-square test results showing the association of morphological features with different depth layers of Central Arctic Ocean"
+
+##Create Chi square-table
+significant_features <- data.frame(
+  Seabasin = c(
+    "Amundsen +\nMakarov +\nNansen (n = 229)",
+    "",
+    "",
+    "Amundsen (n = 65)",
+    "Makarov (n = 104)",
+    "",
+    "",
+    "Nansen ( n= 60)"
+  ),
+  `Morphological features` = c("TL-EPS", "VL", "TL", "VL", "TL-EPS", "PL", "TL", "EPS"),
+  `Chi- square test (p-value)` = c(
+    "9.4 (0.002)",
+    "9.5 (0.001)",
+    "8.6 (0.003)",
+    "< 0.001",
+    "12.7 (< 0.001)",
+    "16.2 (< 0.001",
+    "11.5 (<0.001)",
+    "4.5 (0.03)"
+  ),
+  `Odds ratio` = c(
+    "2.7 (E/M)",
+    "2.8 (M/E)",
+    "5.3 (E/M)",
+    "28.5 (M/E)",
+    "5.1 (E/M)",
+    "10.1 (E/M",
+    "7.4 (E/M)",
+    "5.0 (E/M)"
+  )
+)
+
+##Set column names
+colnames(significant_features) <- c("Seabasin", "Features", "Chi-square (p-value)", "Odds ratio")
+
+##Create custom theme with sans font and size 7
+nm_style <- ttheme(
+  base_size = 7,
+  colnames.style = colnames_style(
+    face = "bold",
+    size = 7,
+    color = "black",
+    fontfamily = "sans"
+  ),
+  tbody.style = tbody_style(
+    face = "plain",
+    size = 6.5,
+    color = "black",
+    fontfamily = "sans"
+  )
+)
+
+##Make the table
+Fig4c_table <- ggtexttable(significant_features, rows = NULL, theme = nm_style)
+Fig4c_table
+```
+
+# Elemental analysis of Arctic prokaryotes using SEM-EDX
+
+@fig-4d shows the elemental ratio of Arctic prokaryotes
+
+```{r}
+##Fig.4d: Read a specific sheet by name
+edx_ratio_cell <- read_excel("./data/rawdata.xlsx", sheet = "edx_cell_mol_ratio")
+
+##Modify Depth labels
+edx_ratio_cell$depthID <- factor(edx_ratio_cell$depthID,
+                                  levels = c("Epipelagic", "Mesopelagic"))
+```
+
+```{r}
+
+##Use pivot_longer to reshape the data
+edx_ratio_cell <- edx_ratio_cell |>
+  pivot_longer(
+    cols = c("C_N", "C_P", "N_P"),
+    names_to = "mol_ratio",
+    values_to = "value"
+  )
+print(edx_ratio_cell)
+```
+
+```{r}
+##define and remove outliers
+##define the outlier removal function based on IQR
+remove_outliers <- function(data) {
+  Q1 <- quantile(data, 0.25, na.rm = TRUE)  # First quartile (25th percentile)
+  Q3 <- quantile(data, 0.75, na.rm = TRUE)  # Third quartile (75th percentile)
+  IQR_value <- Q3 - Q1  # Interquartile range
+  
+  # Calculate the bounds for outliers
+  lower_bound <- Q1 - 1.5 * IQR_value
+  upper_bound <- Q3 + 1.5 * IQR_value
+  
+  # Return only values within the bounds, and mark outliers as NA
+  cleaned_data <- ifelse(data >= lower_bound &
+                           data <= upper_bound, data, NA)
+  
+  return(cleaned_data)
+}
+```
+
+```{r}
+##Apply outlier removal by depthID and mol_ratio
+edx_outliers <- edx_ratio_cell |>
+  group_by(depthID, mol_ratio) |>  # Group by depthID and mol_ratio
+  mutate(value_no_outliers = remove_outliers(value)) |>  # Apply the outlier removal
+  ungroup()  # Remove grouping after applying the function
+print(edx_outliers)
+```
+
+```{r}
+##Remove rows where Value_outliers is NA (those were outliers)
+edx_no_outliers <- edx_outliers %>%
+  filter(!is.na(value_no_outliers))  # Keep only rows without outliers
+print(edx_no_outliers)
+```
+
+```{r}
+##Calcualte summary statistics
+summary_stats_edx <- edx_no_outliers |>
+  group_by(depthID, mol_ratio) |>
+  summarise(
+    median = median(value, na.rm = TRUE),
+    SE = sd (value, na.rm = TRUE) / sqrt(n()),
+    n = n(),
+    CI = 1.96 * SE
+  ) |>
+  ungroup()
+print(summary_stats_edx)
+```
+
+```{r}
+##Normality Test (Shapiro-Wilk Test)
+shapiro_test_C_N <- shapiro.test(edx_no_outliers$value_no_outliers[edx_no_outliers$mol_ratio == "C_N"])
+shapiro_test_C_P <- shapiro.test(edx_no_outliers$value_no_outliers[edx_no_outliers$mol_ratio == "C_P"])
+shapiro_test_N_P <- shapiro.test(edx_no_outliers$value_no_outliers[edx_no_outliers$mol_ratio == "N_P"])
+
+##View normality test results
+shapiro_test_C_N
+shapiro_test_C_P
+shapiro_test_N_P
+```
+
+```{r}
+##Mann-Whitney U test for each ratio (since data is not normal)
+##For C:N ratio
+mann_whitney_C_N <- wilcox.test(value_no_outliers ~ depthID, data = edx_no_outliers[edx_no_outliers$mol_ratio == "C_N", ])
+print(mann_whitney_C_N)
+
+#For C:P ratio
+mann_whitney_C_P <- wilcox.test(value_no_outliers ~ depthID, data = edx_no_outliers[edx_no_outliers$mol_ratio == "C_P", ])
+print(mann_whitney_C_P)
+
+#For N:P ratio
+mann_whitney_N_P <- wilcox.test(value_no_outliers ~ depthID, data = edx_no_outliers[edx_no_outliers$mol_ratio == "N_P", ])
+print(mann_whitney_N_P)
+```
+
+```{r}
+##Compute label positions
+max_y_per_ratio <- edx_no_outliers |>
+  group_by(mol_ratio) |>
+  summarise(max_y = max(value, na.rm = TRUE)) |>
+  mutate(
+    line_y = max_y * 1.05,
+    ##line position
+    text_y = max_y * 1.08,
+    ##text slightly above line
+    label = c("*", "n.s.", "n.s.")  ##adjust based on your stats
+  )
+```
+
+```{r}
+#| label: fig-4d
+#| fig-cap: "Stiochiometric ratio of different elements in the different depth layers of Central Arctic Ocean"
+
+##Plot boxplot for the ratios, faceted by depthID
+ratio_element <- ggplot(edx_no_outliers,
+                        aes(x = mol_ratio, y = value, fill = depthID)) +
+  geom_violin(
+    lwd = 0.6,
+    alpha = 0.5,
+    trim = TRUE,
+    position = position_dodge(width = 0.9)
+  ) +
+  geom_boxplot(
+    width = 0.2,
+    position = position_dodge(width = 0.9),
+    outlier.shape = NA,
+    alpha = 0.7
+  ) +
+  geom_point(
+    aes(fill = depthID),
+    position = position_jitterdodge(),
+    shape = 21,
+    size = 2,
+    alpha = 0.2
+  ) +
+  scale_fill_viridis_d(option = "cividis", direction = -1) +
+  facet_wrap( ~ mol_ratio, scales = "free") +
+  scale_x_discrete(labels = c(
+    "C_N" = "C/N\n(n = 48, 30)",
+    "C_P" = "C/P\n(n = 52, 28)",
+    "N_P" = "N/P\n(n = 53, 28)"
+  )) +
+  labs(x = "Elemental ratio", y = "Molar ratio", fill = "Depth") +
+  theme_bw() +
+  theme(
+    text = element_text(family = "sans"),
+    legend.position = "top",
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 7),
+    panel.grid = element_blank(),
+    panel.border = element_rect(
+      color = "black",
+      linewidth = 1.5,
+      fill = NA
+    ),
+    axis.title.x = element_text(colour = "Black", size = 7),
+    axis.title.y = element_text(colour = "Black", size = 7),
+    axis.text.x = element_text(
+      angle = 0,
+      hjust = 0.5,
+      size = 7
+    ),
+    strip.text = element_blank()
+  )
+
+##Adding significaNce lines
+Fig4d <- ratio_element +
+  geom_segment(
+    data = max_y_per_ratio,
+    aes(
+      x = 0.7,
+      xend = 1.4,
+      y = line_y,
+      yend = line_y
+    ),
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = max_y_per_ratio,
+    aes(x = 1.0, y = text_y, label = label),
+    size = 3,
+    inherit.aes = FALSE
+  )
+Fig4d
+
+##Save the plot
+ggsave(
+  filename = "Elementalratio.png",
+  path = "figures",
+  plot = Fig4d,
+  width = 100,
+  height = 80,
+  units = "mm",
+  dpi = 500
+)
+```
+
+# Wrap and combine figures in one plot
+
+@fig-4 shows the combined plots of cell shape, morphological features and elemental composition in Arctic prokaryotes
+
+```{r}
+#| label: fig-4
+#| fig-cap: "Morphology and elemental composition of Arctic prokaryotes analysed by SEM and SEM-EDX"
+##Wrap it using patchwork
+Fig4a_wrap <- wrap_elements(Fig4a)
+Fig4b_wrap <- wrap_elements(Fig4b)
+##Assemble top and bottom rows
+top_row <- Fig4a_wrap + Fig4b_wrap + plot_layout(widths = c(2, 3))
+bottom_row <- Fig4c_table + Fig4d
+
+##Combine rows with annotation
+Fig4 <- top_row / bottom_row +
+  plot_annotation(tag_levels = 'a',
+                  theme = theme(plot.tag = element_text(
+                    size = 7,
+                    face = "bold",
+                    family = "sans"
+                  )))
+Fig4
+
+##save in figures folder as png
+ggsave(
+  filename= "Fig4_SEM.png",
+  plot = Fig4,
+  path ="figures",
+  width = 180,
+  height = 185,
+  units = "mm",
+  dpi = 500
+)
+
+##save in figures folder as pdf
+ggsave(
+  filename= "Fig4_SEM.pdf",
+  plot = Fig4,
+  path ="figures",
+  width = 180,
+  height = 185,
+  units = "mm",
+  dpi = 500
+)
+
+```
+
+# Distribution of morphological features in epipelagic and mesopelagic depth layers
+
+@fig-EFa shows the distribution of morphological features in the Arctic prokaryotes uisng heatmap gradient
+
+```{r}
+##Extended Figure: Plotting yes and no category foR morphological features
+##Read a specific sheet by name
+morph_feat <- read_excel("./data/rawdata.xlsx", sheet = "features")
+glimpse(morph_feat)
+
+##Compute proportions for counts
+morph_feat_proportion <- morph_feat |>
+  group_by(seabasin, depth, feature_acronym) |>
+  mutate(total = sum(counts), proportion = counts / total * 100) |>
+  ungroup()
+print(morph_feat_proportion)
+```
+
+```{r}
+##Ensure Proportion is numeric
+morph_feat_proportion$proportion <- as.numeric(as.character(morph_feat_proportion$proportion))
+
+##Modify Depth labels
+morph_feat_proportion$depth <- as.character(morph_feat_proportion$depth)
+morph_feat_proportion$depth[morph_feat_proportion$depth == "Upper"] <- "Epipelagic"
+morph_feat_proportion$depth[morph_feat_proportion$depth == "Lower"] <- "Mesopelagic"
+morph_feat_proportion$depth <- factor(morph_feat_proportion$depth, levels = c("Epipelagic", "Mesopelagic"))
+head(morph_feat_proportion, 6)
+```
+
+```{r}
+##Calculate summary statistics: mean only
+##Ensure all combinations of MorphologicalFeatures, depth, and criteria are present
+morph_feat_summary <- morph_feat_proportion |>
+  group_by(depth, feature_acronym, criteria) |>
+  summarize(mean_proportion = mean(proportion, na.rm = TRUE),
+            .groups = "drop")
+View(morph_feat_summary)
+```
+
+```{r}
+##Heatmap to show plot
+##Capture original order (assumes it's the order in the dataset)
+original_order <- unique(morph_feat_summary$feature_acronym)
+
+##List of significant features
+significant_features <- c("TL-EPS", "VL", "TL")
+
+##Modify f1_summary Feature labels
+morph_feat_summary <- morph_feat_summary |>
+  mutate(
+    feature_starred = ifelse(
+      feature_acronym %in% significant_features,
+      paste0("** ", feature_acronym),
+      # or "* " / "** " based on threshold
+      feature_acronym
+    )
+  )
+print(morph_feat_summary)
+```
+
+```{r}
+##Match the new feature_starred factor to the original order
+morph_feat_summary <- morph_feat_summary |>
+  mutate(feature_starred = factor(
+    feature_starred,
+    levels = ifelse(
+      original_order %in% significant_features,
+      paste0("** ", original_order),
+      original_order
+    )
+  ))
+print(morph_feat_summary)
+```
+
+```{r}
+#| label: fig-EFa
+#| fig-cap: "Distribution of morphological features"
+
+##Plot the heatmap
+EFa_SEM <- ggplot(morph_feat_summary,
+                  aes(x = criteria, y = feature_starred, fill = mean_proportion)) +
+  geom_tile(color = NA) +
+  scale_fill_viridis_c(option = "cividis",
+                       direction = -1,
+                       name = "proportion (%)") +
+  facet_grid(. ~ depth) +
+  labs(x = "Criteria", y = "Morphological features") +
+  theme_bw() +
+  theme(
+    text = element_text(family = "sans"),
+    axis.title.x = element_text(color = "black", size = 8),
+    axis.title.y = element_text(color = "black", size = 8),
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 7, face = "bold"),
+    axis.text = element_text(size = 7, face = "bold"),
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    strip.text = element_text(size = 7, face = "bold"),
+    panel.grid = element_blank(),
+    panel.border = element_rect(
+      color = "black",
+      linewidth = 1.5,
+      fill = NA
+    ),
+    panel.spacing = unit(0.2, "lines")
+  )
+EFa_SEM
+
+##Save the plot as png
+ggsave(
+  filename = "EFa_SEM.png",
+  path = "figures",
+  width = 95,
+  height = 80,
+  units = "mm",
+  dpi = 500
+)
+```
+
+# Molar percentages between prokaryotic cells and vesicle like structures
+
+@fig-EFb shows the elemental differences between prokaryotic cells and vesicle like structures
+
+```{r}
+##Fig.EFb:Plot Prokaryotic cell vs Vesicle like structures in mol %
+##Read specific sheet by name
+edx_cell_VL <- read_excel("./data/rawdata.xlsx", sheet = "cell_VL")
+View(edx_cell_VL)
+```
+
+```{r}
+##Summary statistcis of mol ratio
+summary_edx_cell_VL <- edx_cell_VL |>
+  group_by(category, element) |>
+  summarise(
+    mean = mean(mol_percent, na.rm = TRUE),
+    se = sd(mol_percent, na.rm = TRUE) / sqrt (n()),
+    n = n(),
+    CI = 1.96 * se,
+    .groups = "drop"
+  )
+
+##View the summary statistics
+print(summary_edx_cell_VL)
+```
+
+```{r}
+##Define the outlier removal function based on IQR
+edx_cell_VL_outliers <- function(data) {
+  Q1 <- quantile(data, 0.25, na.rm = TRUE)  # First quartile (25th percentile)
+  Q3 <- quantile(data, 0.75, na.rm = TRUE)  # Third quartile (75th percentile)
+  IQR_value <- Q3 - Q1  # Interquartile range
+  
+  ##Calculate the bounds for outliers
+  lower_bound <- Q1 - 1.5 * IQR_value
+  upper_bound <- Q3 + 1.5 * IQR_value
+  
+  ##Return only values within the bounds, and mark outliers as NA
+  cleaned_data <- ifelse(data >= lower_bound &
+                           data <= upper_bound, data, NA)
+  
+  return(cleaned_data)
+}
+```
+
+```{r}
+##Apply outlier removal by category and molpercent and filter out NA values in a single step
+edx_cell_VL_no_outliers <- edx_cell_VL |>
+  group_by(category, element) |>  # group by category
+  mutate(value_no_outliers_mol_percent = edx_cell_VL_outliers(mol_percent)) |>  
+  # Apply outlier removal
+  filter(!is.na(value_no_outliers_mol_percent)) |>  
+  # Remove rows where Value_no_outliers is NA
+  ungroup()  # Remove grouping after applying the function
+
+##View the cleaned data
+View(edx_cell_VL_no_outliers)
+```
+
+```{r}
+##Calcualte summary statistics
+summary_edx_cell_VL_no_outliers <- edx_cell_VL_no_outliers |>
+  group_by(category, element) |>
+  summarise(
+    median = median(value_no_outliers_mol_percent, na.rm = TRUE),
+    SE = sd (value_no_outliers_mol_percent, na.rm = TRUE) / sqrt(n()),
+    n = n(),
+    CI = 1.96 * SE
+  ) |>
+  ungroup()
+print(summary_edx_cell_VL_no_outliers)
+```
+
+```{r}
+##Normality Test (Shapiro-Wilk Test)
+cell_VL_shapiro_test_C <- shapiro.test(edx_cell_VL_no_outliers$value_no_outliers_mol_percent[edx_cell_VL_no_outliers$element == "C"])
+cell_VL_shapiro_test_N <- shapiro.test(edx_cell_VL_no_outliers$value_no_outliers_mol_percent[edx_cell_VL_no_outliers$element == "N"])
+cell_VL_shapiro_test_P <- shapiro.test(edx_cell_VL_no_outliers$value_no_outliers_mol_percent[edx_cell_VL_no_outliers$element == "P"])
+cell_VL_shapiro_test_Mg <- shapiro.test(edx_cell_VL_no_outliers$value_no_outliers_mol_percent[edx_cell_VL_no_outliers$element == "Mg"])
+
+
+##View normality test results
+cell_VL_shapiro_test_C
+cell_VL_shapiro_test_N
+cell_VL_shapiro_test_P
+cell_VL_shapiro_test_Mg
+```
+
+```{r}
+##Mann-Whitney U test for each element mol % (since data is not normal)
+##For Carbon
+cell_VL_mann_whitney_C <- wilcox.test(value_no_outliers_mol_percent ~ category, data = edx_cell_VL_no_outliers[edx_cell_VL_no_outliers$element == "C", ])
+print(cell_VL_mann_whitney_C)
+
+##For Nitrogen
+cell_VL_mann_whitney_N <- wilcox.test(value_no_outliers_mol_percent ~ category, data = edx_cell_VL_no_outliers[edx_cell_VL_no_outliers$element == "N", ])
+print(cell_VL_mann_whitney_N)
+
+##For Phosphorus
+cell_VL_mann_whitney_P <- wilcox.test(value_no_outliers_mol_percent ~ category, data = edx_cell_VL_no_outliers[edx_cell_VL_no_outliers$element == "P", ])
+print(cell_VL_mann_whitney_P)
+
+##For Magnesium¨
+
+cell_VL_mann_whitney_Mg <- wilcox.test(value_no_outliers_mol_percent ~ category, data = edx_cell_VL_no_outliers[edx_cell_VL_no_outliers$element == "Mg", ])
+print(cell_VL_mann_whitney_Mg)
+```
+
+```{r}
+#| label: fig-EFb
+#| fig-cap: "Molar percentages of elements in prokaryotic cell and vesicle like structures"
+
+
+##Ensure 'element' is a factor with the specified levels
+edx_cell_VL_no_outliers$element <- factor(edx_cell_VL_no_outliers$element,
+                                                levels = c("C", "N", "P", "Mg", "Ca"))
+
+
+##Plot boxplot for the mol_percent, faceted by category
+EFb_SEM <- ggplot(
+  edx_cell_VL_no_outliers,
+  aes(x = element, y = value_no_outliers_mol_percent , fill = category)
+) +
+  geom_violin(
+    lwd = 0.6,
+    alpha = 0.5,
+    trim = TRUE,
+    position = position_dodge(width = 0.9)
+  ) +
+  geom_boxplot(
+    width = 0.2,
+    position = position_dodge(width = 0.9),
+    outlier.shape = NA,
+    alpha = 0.7
+  ) +
+  geom_point(
+    aes(fill = category),
+    position = position_jitterdodge(),
+    shape = 21,
+    size = 1,
+    alpha = 0.2
+  ) +
+  scale_fill_viridis_d(option = "cividis", direction = -1) +
+  facet_wrap( ~ element, scales = "free") +
+  scale_x_discrete(
+    labels = c(
+      "C" = "C (n = 84, 46)",
+      "N" = "N (n = 86, 23)",
+      "P" = "P (n = 81, 49)",
+      "Ca" = "Ca (n = 32)",
+      "Mg" = "Mg (n =11, 43)"
+    )
+  ) +
+  labs(x = "Elements", y = "Mol %", fill = "category") +
+  theme_bw() +
+  theme(
+    text = element_text(family = "sans"),
+    legend.position = "top",
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 7),
+    panel.grid = element_blank(),
+    panel.border = element_rect(
+      color = "black",
+      linewidth = 1.5,
+      fill = NA
+    ),
+    axis.title.x = element_text(colour = "Black", size = 7),
+    axis.title.y = element_text(colour = "Black", size = 7),
+    axis.text.x = element_text(
+      angle = 0,
+      hjust = 0.5,
+      size = 7
+    ),
+    strip.text = element_blank()
+  )
+EFb_SEM
+
+##Save the plot
+ggsave(
+  filename = "EFb_edx_cell_VL.png",
+  path = "figures",
+  plot = EFb_SEM,
+  width = 96,
+  height = 100,
+  units = "mm",
+  dpi = 500
+)
+```
+
+# Combined figures: morphological features and mol% comaprison
+
+@fig-EF shows the distribution of morphological features and mol% comparison
+
+```{r}
+#| label: fig-EF
+#| fig-cap: "Morphological features and mol% comparison"
+
+##combine figures
+ExtendedFig <- EFa_SEM + EFb_SEM + plot_layout(ncol = 2, widths = c(1, 2)) +
+  plot_annotation(
+    tag_levels = 'a',
+    ##gives 'a' and 'b'
+    theme = theme(plot.tag = element_text(
+      size = 7,
+      face = "bold",
+      family = "sans"  ##Matches Nature's style
+    ))
+  )
+ExtendedFig
+
+##Save the plot as png
+ggsave(
+  filename = "ExtendedFig.png",
+  path = "figures",
+  plot = ExtendedFig,
+  width = 180,
+  height = 120,
+  units = "mm",
+  dpi = 500
+)
+
+##Save the plot as pdf
+ggsave(
+  filename = "ExtendedFig.pdf",
+  path = "figures",
+  plot = ExtendedFig,
+  width = 180,
+  height = 120,
+  units = "mm",
+  dpi = 500
+)
+```

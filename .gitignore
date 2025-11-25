@@ -1,0 +1,8 @@
+# R/RStudio stuff
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+# Quarto rendered dependencies (not needed on GitHub)
+sas21-sem_files/
