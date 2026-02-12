@@ -1,4 +1,4 @@
-# sas21-sem Analysis
+# Analysis of Scanning electron microscopy (SEM) and -energy dispersive X-ray spectroscopy (SEM-EDX) data
 
 This repository contains the Quarto .qmd file, data, and generated figures related to analysis of scanning electron microscopy (SEM) data.
 The samples were collected during the Synoptic Arctic Survey-2021. The collected seawater samples were first 1.2µm filtered to select prokaryotic fraction.
@@ -12,8 +12,6 @@ The scanning electron micrographs has been uploaded at  https://doi.org/10.6084/
 ## View the rendered HTML report
 
 Click the link below to view the full Quarto analysis report:
-
-**[sas21-sem HTML Report](https://asve02.github.io/sas21-sem/sas21-sem.html)**
 
 ## Folder structure
 
