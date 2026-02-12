@@ -12,6 +12,7 @@ The scanning electron micrographs has been uploaded at  https://doi.org/10.6084/
 ## View the rendered HTML report
 
 Click the link below to view the full Quarto analysis report:
+**[sas21-sem HTML Report](https://asve02.github.io/sas21-sem/sas21-sem.html)**
 
 ## Folder structure
 
