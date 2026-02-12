@@ -3,9 +3,5 @@
 .RData
 .Ruserdata
 .Rproj.user/
-# Quarto rendered output
-*.html
-*_files/
-
 # Temporary Excel lock files
 ~$*.xlsx
