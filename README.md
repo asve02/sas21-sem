@@ -14,11 +14,31 @@ The scanning electron micrographs has been uploaded at  https://doi.org/10.6084/
 Click the link below to view the full Quarto analysis report:
 **[sas21-sem HTML Report](https://asve02.github.io/sas21-sem/sas21-sem.html)**
 
-## Folder structure
+## System Requirements
+-R (version 4.2.2)
+-Quarto (https://quarto.org/docs/get-started/)
+-R packages: readxl, tidyverse, ggplot2, broom, viridis, patchwork, 
+  cowplot, rstatix, zoo, scales, ggpubr, magick, grid, FSA, dunn.test
+-Tested on: Windows 11
+-No non-standard hardware required
 
-- sas21-sem.qmd – main analysis document  
-- sas21-sem.html – rendered report  
-- figures/ – saved figures generated during analysis  
-- data/ – input datasets  
-- .gitignore – excludes unnecessary files from version control  
+## Installation Guide
+1. Install R: https://cran.r-project.org/
+2. Install Quarto: https://quarto.org/docs/get-started/
+3. Install required R packages:
+   install.packages(c("readxl", "tidyverse", "ggplot2", "broom", 
+   "viridis", "patchwork", "cowplot", "rstatix", "zoo", "scales", 
+   "ggpubr", "magick", "grid", "FSA", "dunn.test"))
+Typical install time: 2-5 minutes on a standard desktop
+
+## Instructions for Use
+Clone the repository and render the analysis in R terminal:
+1. git clone https://github.com/asve02/sas21-sem
+2. cd sas21-sem
+3. quarto render sas21-sem.qmd
+
+Expected output: sas21-sem.html with all figures reproduced
+Expected run time: 2-3 minutes on a standard desktop
+The data/ folder contains all input datasets required to run the analysis.
+
 
