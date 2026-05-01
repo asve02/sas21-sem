@@ -5,3 +5,6 @@
 .Rproj.user/
 # Temporary Excel lock files
 ~$*.xlsx
+# Quarto generated output
+sas21-sem_files/
+sas21-sem.html
